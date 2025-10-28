@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<CONFIG>
-  <Compiler Value="C:\lazarus\fpc\3.2.2\bin\x86_64-win64\fpc.exe" Date="1411535179"/>
-  <Params Value=" -MObjFPC -Scghi -O1 -gw2 -godwarfsets -gl -l -vewnhibq -FiC:\Users\kilia\LazarusProjects\pavus-d\lib\x86_64-win64 -FuC:\Users\kilia\LazarusProjects\pavus-d\UDP -FuC:\Users\kilia\LazarusProjects\pavus-d\SNMP -FuC:\Users\kilia\LazarusProjects\pavus-d\ -FUC:\Users\kilia\LazarusProjects\pavus-d\lib\x86_64-win64\ -FEC:\Users\kilia\LazarusProjects\pavus-d\ -oC:\Users\kilia\LazarusProjects\pavus-d\pavusd.exe pavusd.lpr"/>
-</CONFIG>
