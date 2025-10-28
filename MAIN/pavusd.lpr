@@ -61,24 +61,48 @@ end;
 
 procedure doTests();
 var
-  Request, EngineID, AuthCode: TBytes;
+  Request, EngineID: TBytes;
   Hmac: TMD5HMAC;
-  AW: string;
+  AW: UniCodeString;
   i: Integer;
 begin
-  AW := 'authpass';
-  EngineID := TEncoding.ASCII.GetBytes('engine-123');
-  Request  := TEncoding.ASCII.GetBytes('This is a test SNMP packet.');
 
-  Hmac := computeMD5Hmac(@Request[0], Length(Request), AW, @EngineID[0]);
-  Writeln('HMAC-MD5 (12 bytes, hex): ');
-  for i := 0 to Length(Hmac) do
-    Write(IntToHex(Hmac[i], 2));
+  // Start Test HMAC
+
+  AW := 'authpass';
+  EngineID := TEncoding.UTF8.GetBytes('engine-123');
+  Request  := TEncoding.UTF8.GetBytes('This is a test SNMP packet.');
+
+  Write('AW      :  ');
+  for i := 0 to Length(TEncoding.UTF8.GetBytes(AW))-1 do
+    Write(IntToHex(TEncoding.UTF8.GetBytes(AW)[i], 2),' ');
   Writeln;
+
+  Write('engineID:  ');
+  for i := 0 to Length(EngineID)-1 do
+    Write(IntToHex(EngineID[i], 2),' ');
+  Writeln;
+
+  Write('Request :  ');
+  for i := 0 to Length(Request)-1 do
+    Write(IntToHex(Request[i], 2),' ');
+  Writeln;
+
+  Hmac := computeMD5Hmac(@Request[0], Length(Request), @TEncoding.UTF8.GetBytes(AW)[0], @EngineID[0]);
+
+  Writeln('HMAC-MD5 (12 bytes, hex):');
+  for i := 0 to Length(Hmac)-1 do
+    Write(IntToHex(Hmac[i], 2),' ');
+    {Expected: D9 40 E7 CD 16 30 72 10 B9 DF EE A0}
+  Writeln;
+
+  // End Test HMAC
+
+  ReadLn();
+  halt();
 end;
 
 begin
-
   doTests();
 
   GetMem(ReusableBuffer, (BUFFER_MSG_SIZE*2)+BUFFER_MIB_SIZE);
