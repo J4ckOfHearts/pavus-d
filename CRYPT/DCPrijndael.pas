@@ -24,7 +24,7 @@
 {******************************************************************************}
 unit DCPrijndael;
 
-{$INCLUDE '..\jedi.inc'}
+{$INCLUDE 'jedi.inc'}
 
 interface
 uses

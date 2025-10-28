@@ -45,6 +45,10 @@
         <Filename Value="..\CRYPT\aes128_cipher.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit>
+      <Unit>
+        <Filename Value="..\SNMP\snmp_util.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
