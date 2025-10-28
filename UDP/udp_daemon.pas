@@ -15,7 +15,7 @@ const
   UDP_RECV_BUF_SIZE = 8192; {8192b = 8kb}
 
 type
-  TUDPReceiveEvent = procedure(const RecvData: TBytes; const FromIP: string; FromPort: Word) of object;
+  TUDPReceiveEvent = procedure(const RecvData: PByte; const RecvLen: Integer; const RespData: PByte; const FromIP: string; FromPort: Word) of object;
 
   TUDPDaemon = class(TThread)
 
@@ -25,15 +25,19 @@ type
     FOnReceive : TUDPReceiveEvent;
     FClosed    : Boolean;
 
+    FRespBuf   : PByte;
+    FRecvBuf   : PByte;
+    FMibBuf    : PByte;
+
   protected
     procedure Execute; override;
 
   public
-    constructor Create(Port: Word; CreateSuspended: Boolean = False);
+    constructor Create(Port: Word; CreateSuspended: Boolean = False; const RespBuf: PByte = nil; const RecvBuf: PByte = nil; const MibBuf: PByte = nil);
     destructor Destroy; override;
 
     procedure StopAndWait;
-    procedure SendTo(const Data: TBytes; const Host: string; Port: Word);
+    procedure SendTo(const Data: PByte; const DataLen: Integer; const Host: string; Port: Word);
     property  OnReceive: TUDPReceiveEvent read FOnReceive write FOnReceive;
   end;
 
@@ -41,10 +45,13 @@ implementation
 
 (* TUDPDaemon *)
 
-constructor TUDPDaemon.Create(Port: Word; CreateSuspended: Boolean);
+constructor TUDPDaemon.Create(Port: Word; CreateSuspended: Boolean = False; const RespBuf: PByte = nil; const RecvBuf: PByte = nil;  const MibBuf: PByte = nil);
 begin
   inherited Create(True);
   FreeOnTerminate := False; {we need to clean up Object after it terminated, so don't allow immediate free}
+  FRespBuf := RespBuf;
+  FRecvBuf := RecvBuf;
+  FMibBuf  := MibBuf;
   FPort := Port;
   FSocket := TUDPBlockSocket.Create;
   FSocket.CreateSocket;
@@ -65,7 +72,6 @@ var
   DataStr: RawByteString;
   FromIP: string;
   FromPort: Integer;
-  Buf: TBytes;
 begin
   WriteLn('[+] TUDPDaemon is now running on port '+IntToStr(FPort));
   while not Terminated do
@@ -77,12 +83,11 @@ begin
       begin
         FromIP := FSocket.GetRemoteSinIP;
         FromPort := FSocket.GetRemoteSinPort;
-        SetLength(Buf, Length(DataStr));
-        if Length(Buf) > 0 then
-          Move(DataStr[1], Buf[0], Length(Buf));
+        if Length(DataStr) > 0 then
+          Move(DataStr[1], FRecvBuf, Length(DataStr));
         if Assigned(FOnReceive) then
           try
-            FOnReceive(Buf, FromIP, FromPort);
+            FOnReceive(FRecvBuf, Length(DataStr), FRespBuf, FromIP, FromPort);
           except
             {ignore user exceptions}
           end;
@@ -100,11 +105,11 @@ begin
   while not FClosed do Sleep(10);
 end;
 
-procedure TUDPDaemon.SendTo(const Data: TBytes; const Host: string; Port: Word);
+procedure TUDPDaemon.SendTo(const Data: PByte; const DataLen: Integer; const Host: string; Port: Word);
 begin
-  if Length(Data) = 0 then Exit;
+  if DataLen <= 0 then Exit;
   FSocket.Connect(Host, IntToStr(Port));
-  FSocket.SendBufferTo(@Data[0], Length(Data));
+  FSocket.SendBufferTo(Data, DataLen);
 end;
 
 end.
