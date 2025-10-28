@@ -7,13 +7,14 @@ interface
 uses
   Classes, SysUtils;
 
-function handleRequest(const RecvData: TBytes): TBytes;
+{Returns the length of content written to RespData-Buffer}
+function handleRequest(const RecvData: PByte; const RecvLen: Integer; const RespData: PByte): Integer;
 
 
 
 implementation
 
-function handleRequest(const RecvData: TBytes) : TBytes;
+function handleRequest(const RecvData: PByte; const RecvLen: Integer; const RespData: PByte): Integer;
 begin
 
 end;
