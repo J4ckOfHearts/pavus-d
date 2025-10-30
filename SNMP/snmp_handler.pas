@@ -220,7 +220,10 @@ begin
   end;
 
   RecvDataDec := RecvData + BUFFER_RECV_SIZE;
-  decryptAES128(localizeAES128Key(exPrivPass, exEngineID), 0, 0, v3Msg.PrivParams, RecvData, RecvLen, RecvDataDec);
+  decryptAES128(localizeAES128Key(exPrivPass, exEngineID), v3Msg.SecEngineBoots, v3Msg.SecEngineTime, v3Msg.PrivParams, v3Msg.scopedPDUStartPtr, v3Msg.scopedPDULen, RecvDataDec);
+
+  {read scoped PDU and reply accordingly}
+
 
 end;
 

@@ -93,9 +93,18 @@ type
     AuthParams        : PByte; {Len 12 , hmac    }
     PrivParams        : PByte; {Len 8  , aes salt}
     //ScopedPDU
-    scopedPDUStartPtr : PByte;   {Either PDU-TAG or OCT-TAG}
-    scopedPDUStartLen : Integer; {Either Len of OCT or PDU}
+    scopedPDUStartPtr : PByte;   {start of (encrypted) scoped pdu}
+    scopedPDULen      : Integer; {Either Len of OCT or PDU}
+  end;
+
+  PSnmpScopedPdu = ^TSnmpScopedPdu;
+  TSnmpScopedPdu = record
+    ContextEngineID   : PByte;
+    ContextEngineIDLen: Integer;
+    ContextName       : PByte;
+    ContextNameLen    : Integer;
     PDUType           : Byte;
+    PDULength         : Integer;
     RequestID         : Integer;
     Int0              : Integer; {ErrorStatus / nonRepeaters  }
     Int1              : Integer; {ErrorIndex  / maxRepetitions}
@@ -374,7 +383,7 @@ var
   calcHmac: TMD5HMAC;
 begin
   move(PAuthParams^, recvHmac[0], 12);
-  fillchar(PAuthParams, 12, 0);
+  fillchar(PAuthParams^, 12, 0);
   calcHmac := computeMD5Hmac(PData, DataLen, AuthPass, EngineID);
   Result := CompareMem(@recvHmac[0], @calcHmac[0], 12);
 end;
@@ -535,7 +544,7 @@ begin
   Inc(p);
   len := ReadBERLength(p);
 
-  Msg.scopedPDUStartLen := len;
+  Msg.scopedPDULen := len;
   Msg.scopedPDUStartPtr := p;
 
   Result := True;
