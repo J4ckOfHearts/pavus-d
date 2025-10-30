@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils,
-  snmp_util, aes128_cipher;
+  snmp_util, aes128_cipher, md5_hmac;
 
 {Returns the length of content written to RespData-Buffer}
 function handleRequest(const RecvData: PByte; const RecvLen: Integer; RespData: PByte; const MibData: PByte; out SendStart:PByte): Integer;
@@ -20,10 +20,90 @@ const
   BUFFER_RECV_SIZE = 8192 ; {8192b  = 8 kb}
   BUFFER_MIB_SIZE  = 4096 ; {4096b  = 4 kb}
 
-function craftV3ProbeReport(EndOfReplyBuf: PByte; const v3Msg: TSnmpV3Message;  out SendStart: PByte): Integer;
-var
+function craftV3TimeSyncReport(EndOfReplyBuf: PByte; RecvData: PByte; RecvDataLen: Integer; v3Msg: TSnmpV3Message; out SendStart: PByte): Integer;
+const
+  ex12Zero: Array[0..11] of Byte
+    = ($0,$0,$0,$0,$0,$0,$0,$0,$0,$0,$0,$0);
+  exAuthPass: Array[0..5] of Byte
+    = (Ord('a'),Ord('w'),Ord('a'),Ord('w'),Ord('a'),Ord('w'));
   exEngineID: Array[0..4] of Byte
     = ($FF,$69,$69,$69,$FF);
+var
+  recvHmac: TMD5HMAC;
+  calcHmac: TMD5HMAC;
+
+  p, pAuth: PByte;
+  lenVarbind, lenVarBinds, lenScopedPDU, lenSecParams, lenGlobParams, lenMsg : Cardinal;
+begin
+  move(v3Msg.AuthParams^, recvHmac[0], 12);
+  fillchar(v3Msg.AuthParams^, 12, 0);
+  calcHmac := computeMD5Hmac(RecvData, RecvDataLen, exAuthPass, exEngineID);
+  if not comparemem(@recvHmac[0], @calcHmac[0], 12) then
+  begin
+    Result := -1;
+    Exit;
+  end;
+
+  p := EndOfReplyBuf;
+  lenVarbind   := 0;
+  lenVarBinds  := 0;
+  lenScopedPDU := 0;
+  lenSecParams := 0;
+  lenGlobParams:= 0;
+  lenMsg       := 0;
+
+  lenVarbind    += WriteBERIntRev(p, 1);
+  lenVarbind    += WriteBEROidRev(p, [1,3,6,1,6,3,15,1,1,2,0]);
+  lenVarbind    += WriteBERTagRev(p, $30, lenVarbind);          {varbind0}
+  lenVarBinds   += lenVarBind;
+
+  lenScopedPDU  += WriteBERTagRev(p, $30, lenVarbinds)+lenVarBinds;         {varbinds}
+
+  lenScopedPDU  += WriteBERIntRev(p, 0);                        {error-index}
+  lenScopedPDU  += WriteBERIntRev(p, 0);                        {error-status}
+  lenScopedPDU  += WriteBERIntRev(p, v3Msg.RequestID);          {request-id}
+  lenScopedPDU  += WriteBERTagRev(p, $A8, lenScopedPDU);        {report-pdu}
+
+  lenScopedPDU  += WriteBEROctRev(p, nil, 0);                   {context-name}
+  lenScopedPDU  += WriteBEROctRev(p, nil, 0);                   {context-EngineID}
+  lenScopedPDU  += WriteBERTagRev(p, $30, lenScopedPDU);        {scoped-pdu}
+
+  lenSecParams  += WriteBEROctRev(p, nil, 0);                  {priv}
+  pAuth := p-11;
+  lenSecParams  += WriteBEROctRev(p, @ex12Zero[0], 12);        {auth}
+  lenSecParams  += WriteBEROctRev(p, v3Msg.SecName, v3Msg.SecNameLen);  {userName}
+  lenSecParams  += WriteBERIntRev(p, 2);                       {!time}
+  lenSecParams  += WriteBERIntRev(p, 2);                       {!boots}
+  lenSecParams  += WriteBEROctRev(p, @exEngineID[0], 5);       {engineID}
+  lenSecParams  += WriteBERTagRev(p, $30, lenSecParams);
+  lenSecParams  += WriteBERTagRev(p, $04, lenSecParams);
+
+  lenGlobParams += WriteBERIntRev(p, 3);                       {msgSecModel}
+  lenGlobParams += WriteBEROctRev(p, @[$05][0], 1);            {msgFlags}
+  lenGlobParams += WriteBERIntRev(p, 65535);                   {msgMaxSize}
+  lenGlobParams += WriteBERIntRev(p, v3Msg.MsgID);             {msgID}
+  lenGlobParams += WriteBERTagRev(p, $30, lenGlobParams);
+
+  lenMsg        += WriteBERIntRev(p, 3);
+
+  lenMsg += lenGlobParams + lenSecParams + lenScopedPDU;
+
+  Result := WriteBERTagRev(p, $30, lenMsg) + lenMsg;
+
+  Inc(p);
+  SendStart := p;
+
+  {authenticate}
+  calcHmac := computeMD5Hmac(p, Result, exAuthPass, exEngineID);
+  move(calcHmac[0], pAuth^, 12);
+
+end;
+
+function craftV3DiscoverReport(EndOfReplyBuf: PByte; const v3Msg: TSnmpV3Message;  out SendStart: PByte): Integer;
+const
+  exEngineID: Array[0..4] of Byte
+    = ($FF,$69,$69,$69,$FF);
+var
   p  : PByte;
   lenVarbind, lenVarBinds, lenScopedPDU, lenSecParams, lenGlobParams, lenMsg : Cardinal;
 begin
@@ -103,8 +183,17 @@ begin
   if ((v3Msg.SecEngineIDLen=0) and (v3Msg.SecEngineID=nil)) then
   begin
     {Send a Report}
-    WriteLn('repooort');
-    Result := craftV3ProbeReport(RespData+2*BUFFER_SEND_SIZE, v3Msg, SendStart);
+    WriteLn('[+] Sending discovery report');
+    Result := craftV3DiscoverReport(RespData+2*BUFFER_SEND_SIZE, v3Msg, SendStart);
+    Exit;
+  end;
+
+  {Check if this is a time-sync probe}
+  if ((v3Msg.PrivParams=nil) {}) then
+  begin
+    {Send Report}
+    WriteLn('[+] Sending time-sync report');
+    Result := craftV3TimeSyncReport(RespData+2*BUFFER_SEND_SIZE, RecvData, RecvLen, v3Msg, SendStart);
     Exit;
   end;
 
