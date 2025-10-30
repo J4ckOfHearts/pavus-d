@@ -8,8 +8,8 @@ uses
   Classes, SysUtils,
   DCPmd5, DCPrijndael;
 
-procedure encryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: TBytes; const PlainText: TBytes; out CipherText: TBytes);
-procedure decryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: TBytes; const CipherText: TBytes; out PlainText: TBytes);
+procedure encryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: PByte; const PlainTextPtr: PByte; const PlainTextLen: Integer; CipherTextPtr: PByte);
+procedure decryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: PByte; const CipherTextPtr: PByte; const CipherTextLen: Integer; PlainTextPtr: PByte);
 function  localizeAES128Key(const PrivPass: TBytes; const EngineID: TBytes): TBytes;
 
 implementation
@@ -53,7 +53,7 @@ end;
 
 (* interface *)
 
-procedure decryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: TBytes; const CipherText: TBytes; out PlainText: TBytes);
+procedure decryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: PByte; const CipherTextPtr: PByte; const CipherTextLen: Integer; PlainTextPtr: PByte);
 var
   AES    : TDCP_rijndael;
   AESkey : TBytes;
@@ -61,8 +61,6 @@ var
 begin
   if Length(LocalizedKey) < 16 then
     raise Exception.Create('[decryptAES128] LocalizedKey must be at least 16 bytes');
-  if Length(PrivParameters) <> 8 then
-    raise Exception.Create('[decryptAES128] PrivParameters must be 8 bytes');
 
   SetLength(AESKey, 16);
   Move(LocalizedKey[0], AESKey[0], 16);
@@ -76,14 +74,12 @@ begin
   IV[6] := (EngineTime shr 8)  and $FF;
   IV[7] := EngineTime and $FF;
 
-  Move(PrivParameters[0], IV[8], 8);
-
-  SetLength(PlainText, Length(CipherText));
+  Move(PrivParameters^, IV[8], 8);
 
   AES := TDCP_rijndael.Create(nil);
   try
     AES.Init(AESKey[0], 128, @IV[0]);
-    AES.DecryptCFBblock(CipherText[0], PlainText[0], Length(CipherText));
+    AES.DecryptCFBblock(CipherTextPtr^, PlainTextPtr^, CipherTextLen);
   finally
     AES.Burn;
     AES.Free;
@@ -91,15 +87,12 @@ begin
 
 end;
 
-procedure encryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: TBytes; const PlainText: TBytes; out CipherText: TBytes);
+procedure encryptAES128(const LocalizedKey: TBytes; EngineBoots, EngineTime: Integer; const PrivParameters: PByte; const PlainTextPtr: PByte; const PlainTextLen: Integer; CipherTextPtr: PByte);
 var
   AES    : TDCP_rijndael;
   AESkey : TBytes;
   IV     : Array[0..15] of Byte;
 begin
-  if Length(PrivParameters) <> 8 then
-    raise Exception.Create('[encryptAES128] PrivParameters must be 8 bytes');
-
   SetLength(AESKey, 16);
   Move(LocalizedKey[0], AESKey[0], 16);
 
@@ -112,14 +105,12 @@ begin
   IV[6] := (EngineTime shr 8)  and $FF;
   IV[7] := EngineTime and $FF;
 
-  Move(PrivParameters[0], IV[8], 8);
-
-  SetLength(CipherText, Length(PlainText));
+  Move(PrivParameters^, IV[8], 8);
 
   AES := TDCP_rijndael.Create(nil);
   try
     AES.Init(AESKey[0], 128, @IV[0]);
-    AES.EncryptCFBblock(PlainText[0], CipherText[0], Length(PlainText));
+    AES.EncryptCFBblock(PlainTextPtr^, CipherTextPtr^, PlainTextLen);
   finally
     AES.Burn;
     AES.Free;
