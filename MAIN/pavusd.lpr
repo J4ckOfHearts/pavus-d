@@ -27,13 +27,14 @@ type
 procedure TServer.OnRecv(RecvData: PByte; const RecvLen: Integer; RespData: PByte; MibData: PByte; const FromIP: string; FromPort: Word);
 var
   RespLen: Integer;
+  SendStart: PByte;
 begin
 
   {Log Connection}
   WriteLn('[*] Got ', RecvLen, ' bytes from ', FromIP, ':', FromPort);
 
   {Handle Message}
-  RespLen := handleRequest(RecvData, RecvLen, RespData, MibData);
+  RespLen := handleRequest(RecvData, RecvLen, RespData, MibData, SendStart);
 
   if (RespLen>0) then
   begin
@@ -136,7 +137,8 @@ begin
   etime := 0;
   eboots := 0;
 
-  encryptAES128(localAESKey, eboots, etime, PrivParams, Request, Encrypt);
+  setLength(Encrypt, length(Request));
+  encryptAES128(localAESKey, eboots, etime, @PrivParams[0], @Request[0], Length(Request), @Encrypt[0]);
 
   Writeln('AES encrypted:');
   for i := 0 to Length(Encrypt)-1 do
@@ -145,7 +147,8 @@ begin
   Writeln;
   WriteLn;
 
-  decryptAES128(localAESKey, eboots, etime, PrivParams, Request, Decrypt);
+  setLength(Decrypt, length(Request));
+  decryptAES128(localAESKey, eboots, etime, @PrivParams[0], @Request[0], Length(Request), @Decrypt[0]);
 
   Writeln('AES decrypted:');
   for i := 0 to Length(Decrypt)-1 do
