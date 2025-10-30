@@ -41,7 +41,7 @@ begin
     {We have handled a v2/v3 packet and want to reply}
     FillChar(RecvData^, BUFFER_RECV_SIZE*2, 0);
     {Send response}
-    //UDPDaemon.SendTo(RespData, RespLen, FromIP, FromPort);
+    UDPDaemon.SendTo(SendStart, RespLen, FromIP, FromPort);
     FillChar(RespData^, BUFFER_SEND_SIZE*2, 0);
   end else
   begin
