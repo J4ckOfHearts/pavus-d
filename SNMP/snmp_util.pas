@@ -93,9 +93,18 @@ type
     AuthParams        : PByte; {Len 12 , hmac    }
     PrivParams        : PByte; {Len 8  , aes salt}
     //ScopedPDU
-    scopedPDUStartPtr : PByte;   {Either PDU-TAG or OCT-TAG}
-    scopedPDUStartLen : Integer; {Either Len of OCT or PDU}
+    scopedPDUStartPtr : PByte;   {start of (encrypted) scoped pdu}
+    scopedPDULen      : Integer; {Either Len of OCT or PDU}
+  end;
+
+  PSnmpScopedPdu = ^TSnmpScopedPdu;
+  TSnmpScopedPdu = record
+    ContextEngineID   : PByte;
+    ContextEngineIDLen: Integer;
+    ContextName       : PByte;
+    ContextNameLen    : Integer;
     PDUType           : Byte;
+    PDULength         : Integer;
     RequestID         : Integer;
     Int0              : Integer; {ErrorStatus / nonRepeaters  }
     Int1              : Integer; {ErrorIndex  / maxRepetitions}
@@ -116,10 +125,10 @@ function  ParseSnmpV2Message(const PRecvData: PByte; const RecvLen: Cardinal; ou
 procedure InsertHmacSnmpV3Message(PData: PByte; const DataLen: Cardinal; const AuthPass, EngineID: TBytes; PAuthParams: PByte);
 function  CheckHmacSnmpV3Message(PData: PByte; const DataLen: Cardinal; const AuthPass, EngineID: TBytes; PAuthParams: PByte): Boolean;
 
-function  WriteBERIntRev(pEnd: PByte; value: Integer): PByte;
-function  WriteBEROctRev(pEnd: PByte; DataPtr: PByte; DataLen: Cardinal): PByte;
-function  WriteBERTagRev(pEnd: PByte; Tag: Byte; length: Cardinal): PByte;
-function  WriteBEROidRev(pEnd: PByte; oid: Array of Cardinal): PByte;
+function  WriteBERIntRev(var p: PByte; value: Integer): Cardinal;
+function  WriteBEROctRev(var p: PByte; DataPtr: PByte; DataLen: Cardinal): Cardinal;
+function  WriteBERTagRev(var p: PByte; Tag: Byte; len: Cardinal): Cardinal;
+function  WriteBEROidRev(var p: PByte; oid: Array of Cardinal): Cardinal;
 
 implementation
 
@@ -204,20 +213,20 @@ begin
     Result[i+1] := tmp[n-1-i];
 end;
 
-function WriteBERIntRev(pEnd: PByte; value: Integer): PByte;
+function WriteBERIntRev(var p: PByte; value: Integer): Cardinal;
 var
-  p  : PByte;
+  pEnd: PByte;
   v,i: Integer;
   l  : TBytes;
 begin
-  p := pEnd;
+  pEnd := P;
 
   if value=0 then
   begin
     p^ := 0;   Dec(p);
     p^ := 1;   Dec(p);
     p^ := $02; Dec(p);
-    Result := p;
+    Result := 3;
     Exit;
   end;
 
@@ -251,22 +260,22 @@ begin
   p^ := $02;
   Dec(p);
 
-  Result := p;
+  Result := PtrUInt(pEnd) - PtrUInt(p);
 end;
 
-function WriteBEROctRev(pEnd: PByte; DataPtr: PByte; DataLen: Cardinal): PByte;
+function WriteBEROctRev(var p: PByte; DataPtr: PByte; DataLen: Cardinal): Cardinal;
 var
-  p,d: PByte;
-  i: Integer;
-  l: TBytes;
+  d, pEnd: PByte;
+  i:  Integer;
+  l:  TBytes;
 begin
-  p := pEnd;
+  pEnd := P;
 
   if (DataPtr=nil) or (DataLen=0) then
   begin
     p^ := 0;   Dec(p);
     p^ := $04; Dec(p);
-    Result := p;
+    Result := 2;
     Exit;
   end;
 
@@ -291,19 +300,27 @@ begin
   p^ := $04;
   Dec(p);
 
-  Result := p;
+  Result := PtrUInt(pEnd) - PtrUInt(p);
 end;
 
-function WriteBERTagRev(pEnd: PByte; Tag: Byte; length: Cardinal): PByte;
+function WriteBERTagRev(var p: PByte; Tag: Byte; len: Cardinal): Cardinal;
 var
-  p: PByte;
+  pEnd: PByte;
   l: TBytes;
   i: Integer;
 begin
-  p := pEnd;
+  pEnd := P;
+
+  if (len=0) then
+  begin
+    p^ := $0;  Dec(p);
+    p^ := Tag; Dec(p);
+    Result := 2;
+    Exit;
+  end;
 
   {length}
-  l := EncodeBERLength(length);
+  l := EncodeBERLength(len);
   for i := Length(l)-1 downto 0 do
   begin
     p^ := l[i];
@@ -314,17 +331,17 @@ begin
   p^ := Tag;
   Dec(p);
 
-  Result := p;
+  Result := NativeUInt(pEnd) - NativeUInt(p);
 end;
 
-function WriteBEROidRev(pEnd: PByte; oid: Array of Cardinal): PByte;
+function WriteBEROidRev(var p: PByte; oid: Array of Cardinal): Cardinal;
 var
-  p: PByte;
+  pEnd: PByte;
   l: TBytes;
   i,n: Integer;
   subid: Cardinal;
 begin
-  p := pEnd;
+  pEnd := P;
   n := 0;
 
   {value}
@@ -357,7 +374,7 @@ begin
   p^ := $06;
   Dec(p);
 
-  Result := p;
+  Result := PtrUInt(pEnd) - PtrUInt(p);
 end;
 
 function CheckHmacSnmpV3Message(PData: PByte; const DataLen: Cardinal; const AuthPass, EngineID: TBytes; PAuthParams: PByte): Boolean;
@@ -366,7 +383,7 @@ var
   calcHmac: TMD5HMAC;
 begin
   move(PAuthParams^, recvHmac[0], 12);
-  fillchar(PAuthParams, 12, 0);
+  fillchar(PAuthParams^, 12, 0);
   calcHmac := computeMD5Hmac(PData, DataLen, AuthPass, EngineID);
   Result := CompareMem(@recvHmac[0], @calcHmac[0], 12);
 end;
@@ -527,7 +544,7 @@ begin
   Inc(p);
   len := ReadBERLength(p);
 
-  Msg.scopedPDUStartLen := len;
+  Msg.scopedPDULen := len;
   Msg.scopedPDUStartPtr := p;
 
   Result := True;
